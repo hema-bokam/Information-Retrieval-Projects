@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Visualization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .chart-container {
+            width: 600px;
+            margin-bottom: 50px;
+        }
+        h2 {
+            margin-bottom: 10px;
+        }
+        canvas {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Query Statistics Visualization</h1>
+
+    <div class="chart-container">
+        <h2>Distribution by Topic</h2>
+        <canvas id="distChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>Query Length Histogram</h2>
+        <canvas id="lengthChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>Query Type Distribution</h2>
+        <canvas id="typeChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>Response Times</h2>
+        <canvas id="responseTimesChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>Top 3 Topic Combinations</h2>
+        <canvas id="multiTopic"></canvas>
+    </div>
+
+    <script>
+        const distData = {{ dist|tojson }};
+        const lengthData = {{ length|tojson }};
+        const typeData = {{ type|tojson }};
+        const multiTopicData = {{ freq_by_multi_topics|tojson }};
+        const responseTimesData = {{ response_times|tojson }};
+
+        const distLabels = Object.keys(distData);
+        const distValues = Object.values(distData);
+
+        const distCtx = document.getElementById('distChart').getContext('2d');
+        const distChart = new Chart(distCtx, {
+            type: 'bar',
+            data: {
+                labels: distLabels,
+                datasets: [{
+                    label: 'Frequency',
+                    data: distValues,
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1,
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Topic'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Frequency'
+                        }
+                    }
+                }
+            }
+        });
+
+        const lengths = lengthData;
+        if (lengths.length > 0) {
+            const minLen = Math.min(...lengths);
+            const maxLen = Math.max(...lengths);
+
+            const binCount = 10;
+            const binSize = (maxLen - minLen) / binCount;
+            const bins = new Array(binCount).fill(0);
+
+            for (let l of lengths) {
+                let binIndex = Math.floor((l - minLen) / binSize);
+                if (binIndex === binCount) { 
+                    binIndex = binCount - 1; 
+                }
+                bins[binIndex]++;
+            }
+
+            const lengthLabels = bins.map((_, i) => {
+                const start = (minLen + i * binSize).toFixed(1);
+                const end = (minLen + (i+1)*binSize).toFixed(1);
+                return `${start} - ${end}`;
+            });
+            const lengthCtx = document.getElementById('lengthChart').getContext('2d');
+            new Chart(lengthCtx, {
+                type: 'bar',
+                data: {
+                    labels: lengthLabels,
+                    datasets: [{
+                        label: 'Count',
+                        data: bins,
+                        backgroundColor: 'rgba(153, 102, 255, 0.6)',
+                        borderColor: 'rgba(153, 102, 255, 1)',
+                        borderWidth: 1,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Query Length Range'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            const lengthCtx = document.getElementById('lengthChart').getContext('2d');
+            new Chart(lengthCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'No length data available'
+                        }
+                    }
+                }
+            });
+        }
+
+        const typeLabels = ['Chit-Chat', 'Query'];
+        const typeCtx = document.getElementById('typeChart').getContext('2d');
+        const typeChart = new Chart(typeCtx, {
+            type: 'pie',
+            data: {
+                labels: typeLabels,
+                datasets: [{
+                    data: typeData,
+                    backgroundColor: [
+                        'rgba(255, 99, 132, 0.6)',
+                        'rgba(54, 162, 235, 0.6)'
+                    ],
+                    borderColor: [
+                        'rgba(255, 99, 132, 1)',
+                        'rgba(54, 162, 235, 1)'
+                    ],
+                    borderWidth: 1,
+                }]
+            },
+            options: {
+                responsive: true
+            }
+        });
+
+        const multiLabels = Object.keys(multiTopicData);
+        let freqs = [];
+        for (const [key, value] of Object.entries(multiTopicData)) {
+            freqs.push([value, key]);
+        }
+        freqs.sort();
+        let topThreeFreq = [0, 0, 0];
+        let topThreeLabels = ['No combination', 'No combination', 'No combination']
+        if (freqs.length > 0) {
+            topThreeFreq[0] = freqs[0][0];
+            topThreeLabels[0] = freqs[0][1];
+        }
+        if (freqs.length > 1) {
+            topThreeFreq[1] = freqs[1][0];
+            topThreeLabels[1] = freqs[1][1];
+        }
+        if (freqs.length > 2) {
+            topThreeFreq[2] = freqs[2][0];
+            topThreeLabels[2] = freqs[2][1];
+        }
+        const multiCtx = document.getElementById('multiTopic').getContext('2d');
+        const multiTopicChart = new Chart(multiCtx, {
+            type: 'pie',
+            data: {
+                labels: topThreeLabels,
+                datasets: [{
+                    data: topThreeFreq,
+                    backgroundColor: [
+                        'rgba(191,164,135,0.6)',
+                        'rgba(119,158,185,0.6)',
+                        'rgba(195,105,215,0.6)'
+                    ],
+                    borderColor: [
+                        'rgba(191,164,135,1)',
+                        'rgba(119,158,185,1)',
+                        'rgba(195,105,215,1)'
+                    ],
+                    borderWidth: 1,
+                }]
+            },
+            options: {
+                responsive: true
+            }
+        });
+        const responseTimes = responseTimesData;
+        const responseTimesLabels = responseTimes.map((_, i) => i + 1); // labeling points as 1,2,3,...
+
+        const responseTimesCtx = document.getElementById('responseTimesChart').getContext('2d');
+        const responseTimesChart = new Chart(responseTimesCtx, {
+            type: 'line',
+            data: {
+                labels: responseTimesLabels,
+                datasets: [{
+                    label: 'Response Time',
+                    data: responseTimes,
+                    fill: false,
+                    borderColor: 'rgba(255, 159, 64, 1)',
+                    backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                    borderWidth: 2,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Request #'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Response Time (sec)'
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
